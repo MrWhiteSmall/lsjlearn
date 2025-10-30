@@ -1,0 +1,7 @@
+AlexNet
+Training finished. Best test accuracy: 0.8794
+
+ResNet
+Epoch [40/40]  Loss: 0.2033  Acc: 0.9295
+Test Accuracy: 0.8809
+Training finished. Best test accuracy: 0.8817
