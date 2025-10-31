@@ -1,0 +1,128 @@
+'''
+
+timestep -> scheduler add noise
+
+input bz ch h w
+Downsample 特征
+Midsample
+Upsample  重建
+
+output -- noise -> loss
+backward
+step
+zeore grad
+
+UNet detail>>
+ResdualBlock(for middile block)
+    for x               for time_emb            for x
+    GroupNorm              
+    SiLU                    SiLU
+    Conv k3p1s1            Linear                                      
+                addd                                                     --> bz out_c dim dim
+    GroupNorm
+    SiLU
+    Conv k3p1s1                                 shortcut_conv k1p0s1     --> bz out_c dim dim
+                add
+                output
+
+ResdualBlock for up/down(在acti后增加上下采样的逻辑，其他和上述一样) for up/down block
+norm
+acti
+[
+    up/down sample
+    if up -> ConvTranspose
+    else down --> conv k3p1s2
+]
+conv
+
+norm
+acti
+conv
+
+AttentionBlock(inner_dim)
+    input bz ch h w
+
+    spatial_norm
+    view    --> bz h*w ch
+    linear q  --> bz h*w idim
+    linear k  --> bz h*w idim
+    linear v  --> bz h*w idim
+    view q k v --> bz head h*w idim/head
+    torch.matmul(q k^T) --> bz head h*w h*w
+    softmax( ../sqrt idim ) --> bz head h*w h*w
+    torch.matmul(.., v) --> bz head h*w idim/head
+    view --> bz h*w idim
+    linear --> bz h*w ch
+    view --> bz ch h w
+    output
+CrossAttentionBlock(q_dim, kv_dim, inner_dim)
+    input       bz q_dim h w
+    cross_input bz kv_dim emb_dim
+
+    norm
+    view input --> bz h*w q_dim
+    linear q(input) --> bz h*w inner_dim
+    linear k(cross_input) --> bz kv_dim inner_dim
+    linear v(cross_input) --> bz kv_dim inner_dim
+    view q --> bz head h*w inner_dim/head
+    view k v -> bz head kv_dim inner_dim/head
+    torch.matmul(q,k^T) --> bz head h*w kv_dim
+    softmax(../sqrt inner_dim) --> bz head h*w kv_dim
+    torch.matmul(.., v) --> bz head h*w inner_dim/head
+    view --> bz h*w inner_dim
+    linear --> bz h*w q_dim
+    view --> bz q_dim h w
+    output
+
+DownBlock
+    in_c out_c 
+    x cross_x temb
+
+    ResDownBlock(in_c out_c) [replace ResidualBlockUpDown]
+    SelfAttn(x,)
+    CrossAttn(x,cross_x)
+    output
+UpBlock
+    in_c resdual_c out_c 
+    x cross_x temb resdual
+
+    x = concat(x, resdual)
+    ResUpBlock(in_c+resdual_c, out_c) [replace ResidualBlockUpDown]
+    SelfAttn(x,)
+    CrossAttn(x,cross_x)
+    output
+MidBlock
+    in_c 
+    x cross_x temb
+
+    ResBlock(in_c in_c)
+    SelfAttn(x)
+    CrossAttn(x, cross_x)
+
+UNet
+    in channel from 4 to 96 && h,w = 64,64
+                               layer1     layer2       layer3
+    down process channel from 96  ->  128   ->    256    ->    384
+                && h,w   from 64  ->   32   ->    16     ->     8
+                collect down process to res_list
+    mid process keep channel = 384
+                && h,w = 8,8
+                                layer1    layer2       layer3
+    up process channel from 384     -> 256  ->    128    ->    96
+                            +res384     +res256    +res128
+                && h,w from  8          16         32          64
+    out_channel from 96 to 4 
+                && h,w = 64,64
+
+    pre:>>
+    in_conv k3p1s1 衔接输入的和第一个DownBlock之间的channel变换
+    process:>>
+    DownBlocks = [ResDownBlock,SelfAttn,CrossAttn]*N_down
+        collect every down_res => resdual_list
+    MidBlocks = [ResBlock,SelfAttn,CrossAttn]*N_mid
+    UpBlocks = [ResUpBlock,SelfAttn,CrossAttn]*N_up
+    post:>>
+    GroupNorm 
+    SiLU
+    conv_out k3p1s1 衔接最后一个UpBlock和输出之间的channel变换
+'''  
